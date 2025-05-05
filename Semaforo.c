@@ -251,6 +251,8 @@ void vTaskSemaforo(void *param)
 // Tarefa: controla a matriz de LEDs
 void vTaskMatriz(void *param)
 {
+    vTaskDelay(pdMS_TO_TICKS(100)); // Tempo para estabilizar o sistema
+    
     npInit(LED_PIN); // Inicializa a matriz de LEDs
     int estadoAnterior = -1;
     int modoAnterior = -1;
