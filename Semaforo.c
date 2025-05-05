@@ -72,7 +72,7 @@ void vTaskBotao(void *param)
 }
 
 // Tarefa: altera o Display OLED
-void vDisplayTask()
+void vDisplayTask(void *param)
 {
     // I2C Initialisation. Using it at 400Khz.
     i2c_init(I2C_PORT, 400 * 1000);
@@ -90,6 +90,7 @@ void vDisplayTask()
     ssd1306_send_data(&ssd);
 
     bool cor = true;
+
     while (true)
     {
         if (modoAtual == 0)
@@ -121,15 +122,15 @@ void vDisplayTask()
         }
         else
         {
-            ssd1306_fill(&ssd, !cor);                          // Limpa o display
-            ssd1306_rect(&ssd, 3, 3, 122, 60, cor, !cor);      // Desenha um retângulo
-            ssd1306_line(&ssd, 3, 15, 123, 15, cor);           // Desenha uma linha
-            ssd1306_line(&ssd, 3, 27, 123, 27, cor);           // Desenha uma linha
-            ssd1306_draw_string(&ssd, "FreeRTOS", 33, 6);      // Desenha uma string
-            ssd1306_draw_string(&ssd, "Modo NOTURNO", 18, 17); // Desenha uma string
-            ssd1306_draw_string(&ssd, "AMARELO", 38, 36); // Desenha uma string
+            ssd1306_fill(&ssd, !cor);                           // Limpa o display
+            ssd1306_rect(&ssd, 3, 3, 122, 60, cor, !cor);       // Desenha um retângulo
+            ssd1306_line(&ssd, 3, 15, 123, 15, cor);            // Desenha uma linha
+            ssd1306_line(&ssd, 3, 27, 123, 27, cor);            // Desenha uma linha
+            ssd1306_draw_string(&ssd, "FreeRTOS", 33, 6);       // Desenha uma string
+            ssd1306_draw_string(&ssd, "Modo NOTURNO", 18, 17);  // Desenha uma string
+            ssd1306_draw_string(&ssd, "AMARELO", 38, 36);       // Desenha uma string
             ssd1306_draw_string(&ssd, "MUITA ATENCAO", 12, 44); // Desenha uma string
-            ssd1306_send_data(&ssd);                           // Atualiza o display
+            ssd1306_send_data(&ssd);                            // Atualiza o display
             sleep_ms(1);
         }
     }
@@ -138,6 +139,8 @@ void vDisplayTask()
 // Tarefa: gera sons para acessibilidade
 void vTaskBuzzer(void *param)
 {
+    vTaskDelay(pdMS_TO_TICKS(200)); // Tempo para estabilizar o sistema
+
     gpio_init(BUZZER_A);
     gpio_init(BUZZER_B);
     gpio_set_dir(BUZZER_A, GPIO_OUT);
@@ -145,48 +148,42 @@ void vTaskBuzzer(void *param)
 
     while (true)
     {
-        if (modoAtual == 0)
+        if (modoAtual == 0) // Modo normal
         {
-            if (estadoSemaforo == 0)
+            switch (estadoSemaforo)
             {
-                // Verde: beep curto 1 vez por segundo
+            case 0: // Verde
                 buzzer_on(BUZZER_A, 4000);
                 buzzer_on(BUZZER_B, 4000);
                 vTaskDelay(pdMS_TO_TICKS(1000));
                 buzzer_off(BUZZER_A);
                 buzzer_off(BUZZER_B);
                 vTaskDelay(pdMS_TO_TICKS(250));
-            }
-            else if (estadoSemaforo == 1)
-            {
-                // Amarelo: beep intermitente rápido
-                for (int i = 0; i < 5; i++)
-                {
-                    buzzer_on(BUZZER_A, 3000);
-                    buzzer_on(BUZZER_B, 3000);
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                    buzzer_off(BUZZER_A);
-                    buzzer_off(BUZZER_B);
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                }
-                vTaskDelay(pdMS_TO_TICKS(500));
-            }
-            else if (estadoSemaforo == 2)
-            {
-                // Vermelho: som contínuo de 500ms e 1.5s desligado
+                break;
+
+            case 1: // Amarelo
+                buzzer_on(BUZZER_A, 3000);
+                buzzer_on(BUZZER_B, 3000);
+                vTaskDelay(pdMS_TO_TICKS(100));
+                buzzer_off(BUZZER_A);
+                buzzer_off(BUZZER_B);
+                vTaskDelay(pdMS_TO_TICKS(300));
+                break;
+
+            case 2: // Vermelho
                 buzzer_on(BUZZER_A, 5000);
                 buzzer_on(BUZZER_B, 5000);
                 vTaskDelay(pdMS_TO_TICKS(500));
                 buzzer_off(BUZZER_A);
                 buzzer_off(BUZZER_B);
                 vTaskDelay(pdMS_TO_TICKS(1500));
+                break;
             }
         }
-        else
+        else // Modo noturno
         {
-            // Modo Noturno: beep lento a cada 2 segundos
-            buzzer_on(BUZZER_A, 3000); // 1 kHz
-            buzzer_on(BUZZER_B, 3000); // 1 kHz
+            buzzer_on(BUZZER_A, 2000); // Tom mais baixo
+            buzzer_on(BUZZER_B, 2000);
             vTaskDelay(pdMS_TO_TICKS(100));
             buzzer_off(BUZZER_A);
             buzzer_off(BUZZER_B);
@@ -196,6 +193,18 @@ void vTaskBuzzer(void *param)
 }
 
 // Tarefa: controla LEDs do semáforo
+void delayComVerificacao(int total_ms)
+{
+    int elapsed = 0;
+    while (elapsed < total_ms)
+    {
+        if (modoAtual != 0)
+            return; // Sai do delay se modo mudar
+        vTaskDelay(pdMS_TO_TICKS(100));
+        elapsed += 100;
+    }
+}
+
 void vTaskSemaforo(void *param)
 {
     gpio_init(LED_VERDE);
@@ -210,21 +219,24 @@ void vTaskSemaforo(void *param)
             estadoSemaforo = 0;
             gpio_put(LED_VERDE, 1);
             gpio_put(LED_VERMELHO, 0);
-            vTaskDelay(pdMS_TO_TICKS(5000));
+            delayComVerificacao(5000);
+            if (modoAtual != 0)
+                continue;
 
             estadoSemaforo = 1;
             gpio_put(LED_VERDE, 1);
             gpio_put(LED_VERMELHO, 1);
-            vTaskDelay(pdMS_TO_TICKS(3000));
+            delayComVerificacao(3000);
+            if (modoAtual != 0)
+                continue;
 
             estadoSemaforo = 2;
             gpio_put(LED_VERDE, 0);
             gpio_put(LED_VERMELHO, 1);
-            vTaskDelay(pdMS_TO_TICKS(4000));
+            delayComVerificacao(4000);
         }
         else
         {
-            estadoSemaforo = 3; // estado exclusivo para modo noturno
             gpio_put(LED_VERMELHO, 1);
             gpio_put(LED_VERDE, 1);
             vTaskDelay(pdMS_TO_TICKS(500));
@@ -236,38 +248,48 @@ void vTaskSemaforo(void *param)
     }
 }
 
+// Tarefa: controla a matriz de LEDs
 void vTaskMatriz(void *param)
 {
     npInit(LED_PIN); // Inicializa a matriz de LEDs
+    int estadoAnterior = -1;
+    int modoAnterior = -1;
 
     while (true)
     {
+        if (modoAtual != modoAnterior)
+        {
+            modoAnterior = modoAtual;
+            estadoAnterior = -1; // Força a atualização
+        }
+
         if (modoAtual == 0)
         {
-            if (estadoSemaforo == 0){
-                printColor(0, 255, 0);
-                printf("VERDE\n");
-                vTaskDelay(pdMS_TO_TICKS(5000));
-            }
-            else if (estadoSemaforo == 1){
-                printColor(255, 255, 0);
-                printf("AMARELO\n");
-                vTaskDelay(pdMS_TO_TICKS(3000));
-            }
-            else if (estadoSemaforo == 2){
-                printColor(255, 0, 0);
-                printf("VERMELHO\n");
-                vTaskDelay(pdMS_TO_TICKS(4000));
+            if (estadoSemaforo != estadoAnterior)
+            {
+                estadoAnterior = estadoSemaforo;
+                switch (estadoSemaforo)
+                {
+                case 0:
+                    printColor(0, 255, 0); // Verde
+                    break;
+                case 1:
+                    printColor(255, 255, 0); // Amarelo
+                    break;
+                case 2:
+                    printColor(255, 0, 0); // Vermelho
+                    break;
+                }
             }
         }
         else
         {
             printColor(255, 255, 0); // Amarelo no modo noturno
-            vTaskDelay(pdMS_TO_TICKS(1));
         }
+
+        vTaskDelay(pdMS_TO_TICKS(100)); // Verifica a cada 100 ms
     }
 }
-
 
 int main()
 {
