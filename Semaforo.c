@@ -284,7 +284,10 @@ void vTaskMatriz(void *param)
         }
         else
         {
-            printColor(255, 255, 0); // Amarelo no modo noturno
+            if (estadoAnterior != 3) { // 3 = estado fictício para "modo noturno amarelo"
+                printColor(255, 255, 0); // Amarelo no modo noturno
+                estadoAnterior = 3;
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(100)); // Verifica a cada 100 ms
